@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PravaSinov</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+<script src="signs.js"></script>
+<style>
+  :root{
+    --bg:#101820; --card:#182530; --text:#edf2f5; --muted:#8a9bab;
+    --accent:#3aa1ff; --good:#34d399; --bad:#f66271; --border:#26333f; --warn:#f5b83d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    min-height:100vh; display:flex; flex-direction:column;
+  }
+  .screen{flex:1; display:flex; flex-direction:column; padding:20px 16px; max-width:480px; margin:0 auto; width:100%;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}
+  .brand{font-weight:800; font-size:20px; letter-spacing:.3px;}
+  .brand span{color:var(--accent);}
+  .lang-toggle{display:flex; background:var(--card); border-radius:10px; padding:3px; border:1px solid var(--border);}
+  .lang-toggle button{background:none; border:none; color:var(--muted); padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;}
+  .lang-toggle button.active{background:var(--accent); color:#fff;}
+
+  .center{flex:1; display:flex; flex-direction:column; justify-content:center; text-align:center;}
+  .title{font-size:26px; font-weight:800; margin-bottom:8px;}
+  .subtitle{color:var(--muted); font-size:15px; margin-bottom:24px; line-height:1.4;}
+  .badge-row{display:flex; gap:8px; justify-content:center; margin-bottom:26px; flex-wrap:wrap;}
+  .badge{background:var(--card); border:1px solid var(--border); border-radius:20px; padding:7px 14px; font-size:12.5px; color:var(--muted);}
+  .btn{display:block; width:100%; padding:15px; border-radius:14px; border:none; font-size:16px; font-weight:700; cursor:pointer; margin-bottom:12px;}
+  .btn-primary{background:var(--accent); color:#fff;}
+  .btn-secondary{background:var(--card); color:var(--text); border:1px solid var(--border);}
+  .btn:disabled{opacity:.5;}
+
+  .progress-row{display:flex; gap:4px; margin-bottom:18px;}
+  .progress-seg{height:5px; flex:1; border-radius:3px; background:var(--border);}
+  .progress-seg.done{background:var(--good);}
+  .progress-seg.current{background:var(--accent);}
+  .progress-label{color:var(--muted); font-size:13px; margin-bottom:16px; text-align:center;}
+
+  .sign-wrap{display:flex; justify-content:center; margin-bottom:18px;}
+  .sign-wrap svg{width:118px; height:118px; filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));}
+
+  .question{font-size:18px; font-weight:700; margin-bottom:20px; line-height:1.35; text-align:center;}
+  .options{display:flex; flex-direction:column; gap:10px;}
+  .option{background:var(--card); border:1px solid var(--border); color:var(--text); padding:14px 16px; border-radius:12px; font-size:15px; text-align:left; cursor:pointer;}
+  .option.correct{background:rgba(52,211,153,.18); border-color:var(--good);}
+  .option.wrong{background:rgba(246,98,113,.18); border-color:var(--bad);}
+
+  .explain-box{margin-top:16px; background:var(--card); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:10px; padding:12px 14px; font-size:14px; color:var(--text); line-height:1.4; display:none;}
+  .explain-box.show{display:block;}
+  .explain-box.ok{border-left-color:var(--good);}
+  .explain-box.no{border-left-color:var(--bad);}
+
+  .next-wrap{margin-top:18px; display:none;}
+  .next-wrap.show{display:block;}
+
+  .ad-center{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;}
+  .spinner{width:46px; height:46px; border-radius:50%; border:4px solid var(--border); border-top-color:var(--accent); animation:spin 1s linear infinite; margin-bottom:18px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .score-big{font-size:52px; font-weight:800; margin:10px 0;}
+  .score-label{color:var(--muted); font-size:14px; margin-bottom:10px;}
+  .result-msg{font-size:15px; margin-bottom:28px; line-height:1.4; padding:0 8px;}
+  .result-msg.good{color:var(--good);} .result-msg.mid{color:var(--warn);} .result-msg.low{color:var(--bad);}
+
+  .stats-line{color:var(--muted); font-size:12.5px; margin-top:18px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+
+<!-- Стартовый экран -->
+<div class="screen" id="screen-start">
+  <div class="topbar">
+    <div class="brand">Prava<span>Sinov</span></div>
+    <div class="lang-toggle">
+      <button data-lang="ru" class="active">RU</button>
+      <button data-lang="uz">UZ</button>
+    </div>
+  </div>
+  <div class="center">
+    <div class="title" data-t="start_title">Готов к экзамену?</div>
+    <div class="subtitle" data-t="start_sub">Бесплатные тесты ПДД с картинками — на русском и узбекском. Отвечай, сразу видишь правильный ответ и объяснение.</div>
+    <div class="badge-row">
+      <div class="badge" data-t="badge_free">🆓 Бесплатно</div>
+      <div class="badge" data-t="badge_images">🖼️ С картинками</div>
+      <div class="badge" data-t="badge_qcount">15 вопросов за попытку</div>
+    </div>
+    <button class="btn btn-primary" id="btn-start" data-t="btn_start">▶️ Начать тест</button>
+  </div>
+</div>
+
+<!-- Экран теста -->
+<div class="screen hidden" id="screen-quiz">
+  <div class="topbar">
+    <div class="brand">Prava<span>Sinov</span></div>
+  </div>
+  <div class="progress-row" id="progress-row"></div>
+  <div class="progress-label" id="progress-label"></div>
+  <div class="sign-wrap hidden" id="sign-wrap"></div>
+  <div class="question" id="question-text"></div>
+  <div class="options" id="options-wrap"></div>
+  <div class="explain-box" id="explain-box"></div>
+  <div class="next-wrap" id="next-wrap">
+    <button class="btn btn-primary" id="btn-next" data-t="btn_next">Далее →</button>
+  </div>
+</div>
+
+<!-- Экран рекламы (каждый 3-й вопрос) -->
+<div class="screen hidden" id="screen-ad">
+  <div class="ad-center">
+    <div class="spinner"></div>
+    <div class="subtitle" data-t="ad_loading">Секунду, дальше продолжим тест...</div>
+  </div>
+</div>
+
+<!-- Экран результата -->
+<div class="screen hidden" id="screen-result">
+  <div class="topbar">
+    <div class="brand">Prava<span>Sinov</span></div>
+  </div>
+  <div class="center">
+    <div class="score-label" data-t="result_label">Твой результат</div>
+    <div class="score-big" id="final-score">0/15</div>
+    <div class="result-msg" id="result-msg"></div>
+    <button class="btn btn-primary" id="btn-restart" data-t="btn_restart">🔁 Пройти ещё раз</button>
+    <button class="btn btn-secondary" id="btn-share" data-t="btn_share">📤 Поделиться</button>
+    <div class="stats-line" data-t="disclaimer">Учебный тест для подготовки. Не официальный экзамен ГСБДД.</div>
+  </div>
+</div>
+
+<script>
+// ---- Telegram WebApp (мягкая деградация вне Telegram) ----
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+// ---- Бот и адрес приложения (обновить после создания бота в BotFather) ----
+const BOT_USERNAME = "REPLACE_WITH_BOT_USERNAME"; // например "pravasinov_bot" — используется в кнопке "Поделиться"
+
+// ---- Реклама между вопросами (Adsgram Interstitial) ----
+// Block ID получишь на partner.adsgram.ai после создания Ad unit типа "Interstitial".
+const ADSGRAM_BLOCK_ID = "REPLACE_WITH_YOUR_BLOCK_ID";
+let AdController = null;
+try {
+  if (window.Adsgram && ADSGRAM_BLOCK_ID !== "REPLACE_WITH_YOUR_BLOCK_ID") {
+    AdController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
+  }
+} catch (e) { console.warn("Adsgram init failed", e); }
+
+function getPlayerId(){
+  if (tg?.initDataUnsafe?.user?.id) return "tg_" + tg.initDataUnsafe.user.id;
+  try {
+    let id = localStorage.getItem("ps_player_id");
+    if (!id){ id = "web_" + Math.random().toString(36).slice(2); localStorage.setItem("ps_player_id", id); }
+    return id;
+  } catch(e){ return "web_" + Math.random().toString(36).slice(2); }
+}
+const PLAYER_ID = getPlayerId();
+
+const SESSION_SIZE = 15;
+const AD_EVERY = 3;
+
+const I18N = {
+  ru: {
+    start_title:"Готов к экзамену?",
+    start_sub:"Бесплатные тесты ПДД с картинками — на русском и узбекском. Отвечай, сразу видишь правильный ответ и объяснение.",
+    badge_free:"🆓 Бесплатно", badge_images:"🖼️ С картинками", badge_qcount:"15 вопросов за попытку",
+    btn_start:"▶️ Начать тест", btn_next:"Далее →", ad_loading:"Секунду, дальше продолжим тест...",
+    result_label:"Твой результат", btn_restart:"🔁 Пройти ещё раз", btn_share:"📤 Поделиться",
+    disclaimer:"Учебный тест для подготовки. Не официальный экзамен ГСБДД.",
+    q_label:(i,n)=>`Вопрос ${i} из ${n}`,
+    correct_lbl:"✅ Верно!", wrong_lbl:"❌ Неверно",
+    msg_good:"Отличный результат! Ты хорошо знаешь правила.",
+    msg_mid:"Неплохо, но повтори пару тем перед экзаменом.",
+    msg_low:"Нужно больше практики — попробуй ещё раз.",
+    share_text:(s,n)=>`Прошёл ${s}/${n} в тесте ПДД PravaSinov! Проверь свои знания:`,
+  },
+  uz: {
+    start_title:"Imtihonga tayyormisiz?",
+    start_sub:"Rasmli bepul YHQ testlari — rus va o'zbek tilida. Javob bering, darhol to'g'ri javobni va tushuntirishni ko'rasiz.",
+    badge_free:"🆓 Bepul", badge_images:"🖼️ Rasmlar bilan", badge_qcount:"Har urinishda 15 savol",
+    btn_start:"▶️ Testni boshlash", btn_next:"Keyingisi →", ad_loading:"Bir soniya, testni davom ettiramiz...",
+    result_label:"Natijangiz", btn_restart:"🔁 Yana urinish", btn_share:"📤 Ulashish",
+    disclaimer:"Tayyorlanish uchun o'quv testi. Rasmiy GSBDD imtihoni emas.",
+    q_label:(i,n)=>`${i}-savol, jami ${n}`,
+    correct_lbl:"✅ To'g'ri!", wrong_lbl:"❌ Noto'g'ri",
+    msg_good:"Ajoyib natija! Siz qoidalarni yaxshi bilasiz.",
+    msg_mid:"Yomon emas, lekin imtihondan oldin bir nechta mavzuni takrorlang.",
+    msg_low:"Ko'proq mashq kerak — yana urinib ko'ring.",
+    share_text:(s,n)=>`PravaSinov YHQ testida ${s}/${n} to'pladim! Bilimingizni sinab ko'ring:`,
+  }
+};
+let lang = "ru";
+
+function applyI18N(){
+  document.querySelectorAll("[data-t]").forEach(el=>{
+    const key = el.getAttribute("data-t");
+    if (I18N[lang][key] !== undefined && typeof I18N[lang][key] === "string") el.textContent = I18N[lang][key];
+  });
+}
+document.querySelectorAll(".lang-toggle button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    lang = btn.getAttribute("data-lang");
+    document.querySelectorAll(".lang-toggle button").forEach(b=>b.classList.toggle("active", b===btn));
+    applyI18N();
+  });
+});
+applyI18N();
+
+// ---- Банк вопросов (грузится статически из questions_bank.json через fetch) ----
+let BANK = [];
+let sessionQuestions = [];
+let idx = 0;
+let correctCount = 0;
+let answeredSinceAd = 0;
+let currentOrder = [];
+
+function shuffle(arr){ for (let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+
+async function loadBank(){
+  if (BANK.length) return BANK;
+  const res = await fetch("questions_bank.json");
+  const data = await res.json();
+  BANK = data.questions;
+  return BANK;
+}
+
+function pickSession(){
+  const pool = shuffle(BANK.slice());
+  return pool.slice(0, Math.min(SESSION_SIZE, pool.length));
+}
+
+function renderProgress(){
+  const row = document.getElementById("progress-row");
+  row.innerHTML = "";
+  sessionQuestions.forEach((_,i)=>{
+    const seg = document.createElement("div");
+    seg.className = "progress-seg" + (i < idx ? " done" : i === idx ? " current" : "");
+    row.appendChild(seg);
+  });
+  document.getElementById("progress-label").textContent = I18N[lang].q_label(idx+1, sessionQuestions.length);
+}
+
+function renderQuestion(){
+  const q = sessionQuestions[idx];
+  renderProgress();
+
+  const signWrap = document.getElementById("sign-wrap");
+  if (q.sign && window.SIGN_ICONS && window.SIGN_ICONS[q.sign]) {
+    signWrap.innerHTML = window.SIGN_ICONS[q.sign];
+    signWrap.classList.remove("hidden");
+  } else {
+    signWrap.innerHTML = "";
+    signWrap.classList.add("hidden");
+  }
+
+  document.getElementById("question-text").textContent = lang === "ru" ? q.q_ru : q.q_uz;
+
+  const optsWrap = document.getElementById("options-wrap");
+  optsWrap.innerHTML = "";
+  const opts = lang === "ru" ? q.options_ru : q.options_uz;
+  // Перемешиваем порядок вариантов при каждом показе — иначе правильный ответ
+  // легко запомнить по позиции, а не по смыслу, что бесполезно для реального экзамена.
+  currentOrder = shuffle(opts.map((_, i) => i));
+  currentOrder.forEach((origIdx, displayIdx) => {
+    const b = document.createElement("button");
+    b.className = "option";
+    b.textContent = opts[origIdx];
+    b.addEventListener("click", ()=>selectAnswer(displayIdx));
+    optsWrap.appendChild(b);
+  });
+
+  const explainBox = document.getElementById("explain-box");
+  explainBox.className = "explain-box";
+  explainBox.textContent = "";
+  document.getElementById("next-wrap").classList.remove("show");
+}
+
+function selectAnswer(choiceDisplayIdx){
+  const q = sessionQuestions[idx];
+  const correctDisplayIdx = currentOrder.indexOf(q.correct);
+  const buttons = document.querySelectorAll("#options-wrap .option");
+  buttons.forEach((b,i)=>{
+    b.disabled = true;
+    b.style.cursor = "default";
+    if (i === correctDisplayIdx) b.classList.add("correct");
+    else if (i === choiceDisplayIdx) b.classList.add("wrong");
+  });
+
+  const isCorrect = choiceDisplayIdx === correctDisplayIdx;
+  if (isCorrect) correctCount++;
+
+  const explainBox = document.getElementById("explain-box");
+  const verdict = isCorrect ? I18N[lang].correct_lbl : I18N[lang].wrong_lbl;
+  const explanation = lang === "ru" ? q.explanation_ru : q.explanation_uz;
+  explainBox.innerHTML = `<b>${verdict}</b><br>${explanation}`;
+  explainBox.className = "explain-box show " + (isCorrect ? "ok" : "no");
+
+  document.getElementById("next-wrap").classList.add("show");
+}
+
+document.getElementById("btn-next").addEventListener("click", ()=>{
+  idx++;
+  answeredSinceAd++;
+  if (idx >= sessionQuestions.length) { finishSession(); return; }
+  if (answeredSinceAd >= AD_EVERY) {
+    answeredSinceAd = 0;
+    showAdThenNext();
+  } else {
+    renderQuestion();
+  }
+});
+
+function showAdThenNext(){
+  document.getElementById("screen-quiz").classList.add("hidden");
+  document.getElementById("screen-ad").classList.remove("hidden");
+  const proceed = ()=>{
+    document.getElementById("screen-ad").classList.add("hidden");
+    document.getElementById("screen-quiz").classList.remove("hidden");
+    renderQuestion();
+  };
+  if (!AdController) { setTimeout(proceed, 600); return; }
+  AdController.show().then(proceed).catch(proceed);
+}
+
+async function finishSession(){
+  document.getElementById("screen-quiz").classList.add("hidden");
+  document.getElementById("screen-result").classList.remove("hidden");
+  const total = sessionQuestions.length;
+  document.getElementById("final-score").textContent = `${correctCount}/${total}`;
+  const pct = correctCount / total;
+  const msgEl = document.getElementById("result-msg");
+  if (pct >= 0.85) { msgEl.textContent = I18N[lang].msg_good; msgEl.className = "result-msg good"; }
+  else if (pct >= 0.6) { msgEl.textContent = I18N[lang].msg_mid; msgEl.className = "result-msg mid"; }
+  else { msgEl.textContent = I18N[lang].msg_low; msgEl.className = "result-msg low"; }
+
+  try {
+    await fetch("/api/attempt", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ playerId: PLAYER_ID })
+    });
+  } catch(e) { console.warn("attempt stat failed", e); }
+}
+
+document.getElementById("btn-restart").addEventListener("click", startSession);
+document.getElementById("btn-share").addEventListener("click", ()=>{
+  const total = sessionQuestions.length;
+  const text = I18N[lang].share_text(correctCount, total);
+  const url = BOT_USERNAME === "REPLACE_WITH_BOT_USERNAME" ? "" : `https://t.me/${BOT_USERNAME}`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
+  else window.open(shareUrl, "_blank");
+});
+
+async function startSession(){
+  await loadBank();
+  sessionQuestions = pickSession();
+  idx = 0; correctCount = 0; answeredSinceAd = 0;
+  document.getElementById("screen-start").classList.add("hidden");
+  document.getElementById("screen-result").classList.add("hidden");
+  document.getElementById("screen-quiz").classList.remove("hidden");
+  renderQuestion();
+}
+
+document.getElementById("btn-start").addEventListener("click", startSession);
+</script>
+</body>
+</html>
