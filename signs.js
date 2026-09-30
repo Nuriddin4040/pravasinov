@@ -67,9 +67,11 @@
       <polygon points="50,4 96,50 50,96 4,50" fill="none" stroke="${BLACK}" stroke-width="2"/>
     `),
 
-    no_entry: redCircle(`<rect x="20" y="41" width="60" height="18" rx="2" fill="${WHITE}"/>`),
+    no_entry: svg(`<circle cx="50" cy="50" r="46" fill="${RED}"/><rect x="20" y="41" width="60" height="18" rx="2" fill="${WHITE}"/>`),
 
-    no_overtaking: redCircle(carIcon(-8, 4, BLACK) + carIcon(14, 4, RED)),
+    no_overtaking: redCircle(
+      `<g transform="translate(50,54) scale(1.25) translate(-50,-54)">${carIcon(38, 54, RED)}${carIcon(62, 54, BLACK)}</g>`
+    ),
 
     no_u_turn: redCircle(`
       <path d="M62,66 V40 a16,16 0 0 0 -32,0 v10" fill="none" stroke="${BLACK}" stroke-width="7"/>
