@@ -140,7 +140,7 @@ const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
 // ---- Бот и адрес приложения (обновить после создания бота в BotFather) ----
-const BOT_USERNAME = "REPLACE_WITH_BOT_USERNAME"; // например "pravasinov_bot" — используется в кнопке "Поделиться"
+const BOT_USERNAME = "pravasinov_bot"; // используется в кнопке "Поделиться"
 
 // ---- Реклама между вопросами (Adsgram Interstitial) ----
 // Block ID получишь на partner.adsgram.ai после создания Ad unit типа "Interstitial".
@@ -351,7 +351,7 @@ document.getElementById("btn-restart").addEventListener("click", startSession);
 document.getElementById("btn-share").addEventListener("click", ()=>{
   const total = sessionQuestions.length;
   const text = I18N[lang].share_text(correctCount, total);
-  const url = BOT_USERNAME === "REPLACE_WITH_BOT_USERNAME" ? "" : `https://t.me/${BOT_USERNAME}`;
+  const url = `https://t.me/${BOT_USERNAME}`;
   const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
   if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
   else window.open(shareUrl, "_blank");
