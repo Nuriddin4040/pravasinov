@@ -150,6 +150,35 @@
       <rect x="42" y="36" width="16" height="28" fill="${RED}"/>
       <rect x="36" y="42" width="28" height="16" fill="${RED}"/>
     `),
+
+    // «Остановка запрещена»: синий круг, красная кайма, красный крест
+    no_stopping: svg(`
+      <circle cx="50" cy="50" r="44" fill="${BLUE}" stroke="${RED}" stroke-width="9"/>
+      <line x1="20" y1="20" x2="80" y2="80" stroke="${RED}" stroke-width="9"/>
+      <line x1="80" y1="20" x2="20" y2="80" stroke="${RED}" stroke-width="9"/>
+    `),
+
+    // «Стоянка запрещена»: синий круг, красная кайма, одна красная полоса
+    no_parking: svg(`
+      <circle cx="50" cy="50" r="44" fill="${BLUE}" stroke="${RED}" stroke-width="9"/>
+      <line x1="20" y1="20" x2="80" y2="80" stroke="${RED}" stroke-width="9"/>
+    `),
+
+    // «Поворот налево запрещён»
+    no_left_turn: redCircle(`
+      <path d="M60,74 V46 a10,10 0 0 0 -10,-10 H34" fill="none" stroke="${BLACK}" stroke-width="7"/>
+      <polygon points="24,36 38,26 38,46" fill="${BLACK}"/>
+      <line x1="22" y1="78" x2="78" y2="22" stroke="${RED}" stroke-width="6"/>
+    `),
+
+    // «Конец главной дороги»: жёлтый ромб, перечёркнутый чёрными полосами
+    end_main_road: svg(`
+      <polygon points="50,4 96,50 50,96 4,50" fill="${YELLOW}" stroke="${WHITE}" stroke-width="10"/>
+      <polygon points="50,4 96,50 50,96 4,50" fill="none" stroke="${BLACK}" stroke-width="2"/>
+      <line x1="27" y1="73" x2="73" y2="27" stroke="${BLACK}" stroke-width="5"/>
+      <line x1="33" y1="79" x2="79" y2="33" stroke="${BLACK}" stroke-width="2"/>
+      <line x1="21" y1="67" x2="67" y2="21" stroke="${BLACK}" stroke-width="2"/>
+    `),
   };
 
   global.SIGN_ICONS = SIGN_ICONS;

@@ -41,8 +41,8 @@ module.exports = async (req, res) => {
       await send({
         chat_id: msg.chat.id,
         text:
-          "Привет! 👋 PravaSinov — бесплатный тест ПДД с картинками для подготовки к экзамену на права. 15 вопросов за попытку, на русском и узбекском.\n\n" +
-          "Salom! 👋 PravaSinov — imtihonga tayyorlanish uchun bepul, rasmli YHQ testi. Har urinishda 15 ta savol, rus va o'zbek tilida.\n\n" +
+          "Привет! 👋 PravaSinov — бесплатный тест ПДД с картинками для подготовки к экзамену на права. 100 вопросов, 20 за попытку, на русском и узбекском.\n\n" +
+          "Salom! 👋 PravaSinov — imtihonga tayyorlanish uchun bepul, rasmli YHQ testi. 100 ta savol, har urinishda 20 tasi, rus va o'zbek tilida.\n\n" +
           "Нажми кнопку ниже, чтобы начать 👇",
         reply_markup: {
           inline_keyboard: [[{ text: "▶️ Boshlash / Начать", web_app: { url: WEBAPP_URL } }]],

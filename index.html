@@ -5,6 +5,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PravaSinov</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+// SDK Adsgram при неактивном/непроверенном блоке сам открывает в Telegram техническое окно
+// «AdsgramError: Block … is not active». Для пользователя (и модератора) это выглядит как поломка
+// приложения посреди теста. Перехватываем только это окно — остальные события Telegram не трогаем,
+// а сама ошибка обрабатывается в коде показа рекламы (тест просто продолжается).
+(function () {
+  function isAdsgramErrorPopup(type, data) {
+    if (type !== "web_app_open_popup") return false;
+    try {
+      const d = typeof data === "string" ? JSON.parse(data) : data;
+      return !!d && d.title === "AdsgramError";
+    } catch (e) { return false; }
+  }
+  try {
+    const proxy = window.TelegramWebviewProxy;
+    if (proxy && typeof proxy.postEvent === "function") {
+      const orig = proxy.postEvent.bind(proxy);
+      proxy.postEvent = function (type, data) {
+        if (isAdsgramErrorPopup(type, data)) { console.warn("[ads] окно ошибки Adsgram скрыто:", data); return; }
+        return orig(type, data);
+      };
+    }
+  } catch (e) { console.warn("[ads] не удалось обернуть TelegramWebviewProxy", e); }
+  try {
+    const ext = window.external;
+    if (ext && typeof ext.notify === "function") {
+      const origNotify = ext.notify.bind(ext);
+      ext.notify = function (msg) {
+        try { const m = JSON.parse(msg); if (isAdsgramErrorPopup(m.eventType, m.eventData)) return; } catch (e) {}
+        return origNotify(msg);
+      };
+    }
+  } catch (e) {}
+  window.__isAdsgramErrorPopup = isAdsgramErrorPopup; // для тестов
+})();
+</script>
 <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <script src="signs.js"></script>
 <style>
@@ -89,7 +125,7 @@
     <div class="badge-row">
       <div class="badge" data-t="badge_free">🆓 Бесплатно</div>
       <div class="badge" data-t="badge_images">🖼️ С картинками</div>
-      <div class="badge" data-t="badge_qcount">15 вопросов за попытку</div>
+      <div class="badge" data-t="badge_qcount">20 вопросов из 100</div>
     </div>
     <button class="btn btn-primary" id="btn-start" data-t="btn_start">▶️ Начать тест</button>
   </div>
@@ -126,7 +162,7 @@
   </div>
   <div class="center">
     <div class="score-label" data-t="result_label">Твой результат</div>
-    <div class="score-big" id="final-score">0/15</div>
+    <div class="score-big" id="final-score">0/20</div>
     <div class="result-msg" id="result-msg"></div>
     <button class="btn btn-primary" id="btn-restart" data-t="btn_restart">🔁 Пройти ещё раз</button>
     <button class="btn btn-secondary" id="btn-share" data-t="btn_share">📤 Поделиться</button>
@@ -146,9 +182,15 @@ const BOT_USERNAME = "pravasinov_bot"; // используется в кнопк
 // Block ID получишь на partner.adsgram.ai после создания Ad unit типа "Interstitial".
 const ADSGRAM_BLOCK_ID = "int-51096";
 let AdController = null;
+let adsDisabled = false; // блок не активен (на модерации) — до конца сессии рекламу не дёргаем
 try {
   if (window.Adsgram && ADSGRAM_BLOCK_ID !== "REPLACE_WITH_YOUR_BLOCK_ID") {
     AdController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
+    // Без подписки SDK показывает свои стандартные окна («нет рекламы», «слишком часто»).
+    // Нам они не нужны: если рекламы нет — тест просто идёт дальше.
+    ["onBannerNotFound", "onNonStopShow", "onTooLongSession", "onFastReturn", "onError"].forEach((ev) => {
+      try { AdController.addEventListener(ev, () => console.info("[ads]", ev)); } catch (e) {}
+    });
   }
 } catch (e) { console.warn("Adsgram init failed", e); }
 
@@ -162,14 +204,14 @@ function getPlayerId(){
 }
 const PLAYER_ID = getPlayerId();
 
-const SESSION_SIZE = 15;
+const SESSION_SIZE = 20;
 const AD_EVERY = 3;
 
 const I18N = {
   ru: {
     start_title:"Готов к экзамену?",
     start_sub:"Бесплатные тесты ПДД с картинками — на русском и узбекском. Отвечай, сразу видишь правильный ответ и объяснение.",
-    badge_free:"🆓 Бесплатно", badge_images:"🖼️ С картинками", badge_qcount:"15 вопросов за попытку",
+    badge_free:"🆓 Бесплатно", badge_images:"🖼️ С картинками", badge_qcount:"20 вопросов из 100",
     btn_start:"▶️ Начать тест", btn_next:"Далее →", ad_loading:"Секунду, дальше продолжим тест...",
     result_label:"Твой результат", btn_restart:"🔁 Пройти ещё раз", btn_share:"📤 Поделиться",
     disclaimer:"Учебный тест для подготовки. Не официальный экзамен ГСБДД.",
@@ -183,7 +225,7 @@ const I18N = {
   uz: {
     start_title:"Imtihonga tayyormisiz?",
     start_sub:"Rasmli bepul YHQ testlari — rus va o'zbek tilida. Javob bering, darhol to'g'ri javobni va tushuntirishni ko'rasiz.",
-    badge_free:"🆓 Bepul", badge_images:"🖼️ Rasmlar bilan", badge_qcount:"Har urinishda 15 savol",
+    badge_free:"🆓 Bepul", badge_images:"🖼️ Rasmlar bilan", badge_qcount:"100 tadan 20 ta savol",
     btn_start:"▶️ Testni boshlash", btn_next:"Keyingisi →", ad_loading:"Bir soniya, testni davom ettiramiz...",
     result_label:"Natijangiz", btn_restart:"🔁 Yana urinish", btn_share:"📤 Ulashish",
     disclaimer:"Tayyorlanish uchun o'quv testi. Rasmiy GSBDD imtihoni emas.",
@@ -324,8 +366,23 @@ function showAdThenNext(){
     document.getElementById("screen-quiz").classList.remove("hidden");
     renderQuestion();
   };
-  if (!AdController) { setTimeout(proceed, 600); return; }
-  AdController.show().then(proceed).catch(proceed);
+  if (!AdController || adsDisabled) { setTimeout(proceed, 600); return; }
+  let done = false;
+  const finish = () => { if (!done) { done = true; proceed(); } };
+  // страховка: если SDK завис и не ответил — через 20 с продолжаем тест
+  const guard = setTimeout(finish, 20000);
+  let shown;
+  try { shown = Promise.resolve(AdController.show()); }
+  catch (e) { shown = Promise.reject(e); }
+  shown
+    .then(() => { clearTimeout(guard); finish(); })
+    .catch((res) => {
+      clearTimeout(guard);
+      const why = String((res && (res.description || res.message)) || res || "");
+      if (/not active|active blockid|not found|Need to use/i.test(why)) adsDisabled = true;
+      console.info("[ads] реклама не показана:", why);
+      finish();
+    });
 }
 
 async function finishSession(){
