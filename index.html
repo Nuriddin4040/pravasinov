@@ -3,59 +3,118 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#101820">
 <title>PravaSinov</title>
+<link rel="preconnect" href="https://sad.adsgram.ai" crossorigin>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
-// SDK Adsgram при неактивном/непроверенном блоке сам открывает в Telegram техническое окно
-// «AdsgramError: Block … is not active». Для пользователя (и модератора) это выглядит как поломка
-// приложения посреди теста. Перехватываем только это окно — остальные события Telegram не трогаем,
-// а сама ошибка обрабатывается в коде показа рекламы (тест просто продолжается).
+// Когда блок Adsgram ещё не активен (на модерации) или рекламы нет, SDK сам открывает в Telegram
+// техническое окно «AdsgramError: Block … is not active». Человеку (и модератору) это выглядит как
+// поломка посреди теста. Здесь скрываем только это окно — на всех клиентах Telegram:
+//   1) Android / iOS / Desktop / macOS — мост TelegramWebviewProxy;
+//   2) старый клиент Windows — window.external.notify;
+//   3) Telegram Web — приложение в iframe, событие уходит строкой JSON в window.parent.postMessage;
+//   4) запасной alert() самого SDK, если моста нет.
+// Остальные события Telegram проходят без изменений; сама ошибка обрабатывается в коде показа рекламы.
 (function () {
   function isAdsgramErrorPopup(type, data) {
     if (type !== "web_app_open_popup") return false;
     try {
-      const d = typeof data === "string" ? JSON.parse(data) : data;
+      var d = typeof data === "string" ? JSON.parse(data) : data;
       return !!d && d.title === "AdsgramError";
     } catch (e) { return false; }
   }
+  function hide(where, data) {
+    window.__adsPopupsHidden = (window.__adsPopupsHidden || 0) + 1;
+    try { console.warn("[ads] окно ошибки Adsgram скрыто (" + where + ")", data); } catch (e) {}
+  }
+  window.__isAdsgramErrorPopup = isAdsgramErrorPopup; // для тестов
+
+  // 1) На Android мост — Java-объект: его метод переопределить нельзя (присваивание молча
+  //    игнорируется). Поэтому подменяем сам объект обёрткой, которая пересылает в настоящий мост всё,
+  //    кроме окна ошибки Adsgram. Если глобальную переменную заменить нельзя — оборачиваем метод.
   try {
-    const proxy = window.TelegramWebviewProxy;
-    if (proxy && typeof proxy.postEvent === "function") {
-      const orig = proxy.postEvent.bind(proxy);
-      proxy.postEvent = function (type, data) {
-        if (isAdsgramErrorPopup(type, data)) { console.warn("[ads] окно ошибки Adsgram скрыто:", data); return; }
-        return orig(type, data);
+    var real = window.TelegramWebviewProxy;
+    if (real && typeof real.postEvent === "function") {
+      var send = real.postEvent.bind(real);
+      var postEvent = function (type, data) {
+        if (isAdsgramErrorPopup(type, data)) { hide("app", data); return; }
+        return send(type, data);
       };
+      var replaced = false;
+      try {
+        window.TelegramWebviewProxy = { postEvent: postEvent };
+        replaced = window.TelegramWebviewProxy.postEvent === postEvent;
+      } catch (e) {}
+      if (!replaced) { try { real.postEvent = postEvent; } catch (e) {} }
     }
-  } catch (e) { console.warn("[ads] не удалось обернуть TelegramWebviewProxy", e); }
+  } catch (e) {}
+
+  // 2) Старый клиент Windows
   try {
-    const ext = window.external;
+    var ext = window.external;
     if (ext && typeof ext.notify === "function") {
-      const origNotify = ext.notify.bind(ext);
+      var notify = ext.notify.bind(ext);
       ext.notify = function (msg) {
-        try { const m = JSON.parse(msg); if (isAdsgramErrorPopup(m.eventType, m.eventData)) return; } catch (e) {}
-        return origNotify(msg);
+        try {
+          var m = JSON.parse(msg);
+          if (isAdsgramErrorPopup(m.eventType, m.eventData)) { hide("notify", m.eventData); return; }
+        } catch (e) {}
+        return notify(msg);
       };
     }
   } catch (e) {}
-  window.__isAdsgramErrorPopup = isAdsgramErrorPopup; // для тестов
+
+  // 3) Telegram Web. Сам window.parent трогать нельзя: по нему Telegram и SDK узнают свои сообщения.
+  //    Поэтому меняем только сериализацию этого одного окна — на пустое событие, которое Telegram игнорирует.
+  if (window.self !== window.top) {
+    try {
+      var stringify = JSON.stringify;
+      JSON.stringify = function (value) {
+        try {
+          if (value && typeof value === "object" && value.eventType === "web_app_open_popup" &&
+              isAdsgramErrorPopup(value.eventType, value.eventData)) {
+            hide("web", value.eventData);
+            return stringify.call(JSON, { eventType: "adsgram_error_hidden", eventData: {} });
+          }
+        } catch (e) {}
+        return stringify.apply(JSON, arguments);
+      };
+    } catch (e) {}
+  }
+
+  // 4) alert() гасим только пока идёт вызов рекламы (флаг ставит код показа рекламы)
+  try {
+    var nativeAlert = window.alert;
+    window.alert = function (msg) {
+      if (window.__adCallActive) { hide("alert", msg); return; }
+      return nativeAlert.apply(window, arguments);
+    };
+  } catch (e) {}
 })();
 </script>
-<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
-<script src="signs.js"></script>
+<!-- SDK рекламы грузится асинхронно: стартовый экран больше не ждёт 190 КБ скрипта -->
+<script async id="adsgram-sdk" src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
   :root{
     --bg:#101820; --card:#182530; --text:#edf2f5; --muted:#8a9bab;
     --accent:#3aa1ff; --good:#34d399; --bad:#f66271; --border:#26333f; --warn:#f5b83d;
+    /* Видимая высота окна Telegram (её выставляет telegram-web-app.js); вне Telegram — 100vh */
+    --app-h: var(--tg-viewport-stable-height, 100vh);
   }
   *{box-sizing:border-box;}
+  html{background:var(--bg);}
   body{
     margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    min-height:100vh; display:flex; flex-direction:column;
+    min-height:var(--app-h); display:flex; flex-direction:column;
+    /* если Telegram показывает окно не на всю высоту, низ страницы скрыт — даём докрутить до конца */
+    padding-bottom:max(0px, calc(100vh - var(--app-h)));
+    -webkit-tap-highlight-color:transparent;
   }
   .screen{flex:1; display:flex; flex-direction:column; padding:20px 16px; max-width:480px; margin:0 auto; width:100%;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; gap:12px;}
   .brand{font-weight:800; font-size:20px; letter-spacing:.3px;}
   .brand span{color:var(--accent);}
   .lang-toggle{display:flex; background:var(--card); border-radius:10px; padding:3px; border:1px solid var(--border);}
@@ -67,23 +126,26 @@
   .subtitle{color:var(--muted); font-size:15px; margin-bottom:24px; line-height:1.4;}
   .badge-row{display:flex; gap:8px; justify-content:center; margin-bottom:26px; flex-wrap:wrap;}
   .badge{background:var(--card); border:1px solid var(--border); border-radius:20px; padding:7px 14px; font-size:12.5px; color:var(--muted);}
-  .btn{display:block; width:100%; padding:15px; border-radius:14px; border:none; font-size:16px; font-weight:700; cursor:pointer; margin-bottom:12px;}
+  .btn{display:block; width:100%; padding:15px; border-radius:14px; border:none; font-size:16px; font-weight:700; cursor:pointer; margin-bottom:12px; font-family:inherit;}
   .btn-primary{background:var(--accent); color:#fff;}
   .btn-secondary{background:var(--card); color:var(--text); border:1px solid var(--border);}
-  .btn:disabled{opacity:.5;}
+  .btn:disabled{opacity:.6; cursor:default;}
+  .btn:focus{outline:none;} .btn:focus-visible{outline:2px solid #fff; outline-offset:2px;}
+  .load-error{color:var(--bad); font-size:14px; line-height:1.4; margin-top:2px;}
 
   .progress-row{display:flex; gap:4px; margin-bottom:18px;}
   .progress-seg{height:5px; flex:1; border-radius:3px; background:var(--border);}
   .progress-seg.done{background:var(--good);}
   .progress-seg.current{background:var(--accent);}
-  .progress-label{color:var(--muted); font-size:13px; margin-bottom:16px; text-align:center;}
+  .progress-label{color:var(--muted); font-size:13px; white-space:nowrap;}
 
   .sign-wrap{display:flex; justify-content:center; margin-bottom:18px;}
   .sign-wrap svg{width:118px; height:118px; filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));}
 
   .question{font-size:18px; font-weight:700; margin-bottom:20px; line-height:1.35; text-align:center;}
   .options{display:flex; flex-direction:column; gap:10px;}
-  .option{background:var(--card); border:1px solid var(--border); color:var(--text); padding:14px 16px; border-radius:12px; font-size:15px; text-align:left; cursor:pointer;}
+  .option{background:var(--card); border:1px solid var(--border); color:var(--text); padding:14px 16px; border-radius:12px; font-size:15px; text-align:left; cursor:pointer; font-family:inherit; line-height:1.3;}
+  .option:disabled{cursor:default; color:var(--text); opacity:1;}
   .option.correct{background:rgba(52,211,153,.18); border-color:var(--good);}
   .option.wrong{background:rgba(246,98,113,.18); border-color:var(--bad);}
 
@@ -92,8 +154,16 @@
   .explain-box.ok{border-left-color:var(--good);}
   .explain-box.no{border-left-color:var(--bad);}
 
-  .next-wrap{margin-top:18px; display:none;}
+  /* Кнопка «Далее» закреплена внизу видимой части окна: раньше в небольшом окне Telegram Desktop
+     она оказывалась ниже края экрана и тест выглядел зависшим после первого ответа.
+     Отступ снизу учитывает случай, когда Telegram показывает окно не на всю высоту. */
+  .next-wrap{
+    position:sticky; bottom:max(0px, calc(100vh - var(--app-h))); z-index:5; display:none;
+    margin:12px -16px -20px; padding:14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    background:linear-gradient(to bottom, rgba(16,24,32,0) 0, var(--bg) 18px);
+  }
   .next-wrap.show{display:block;}
+  .next-wrap .btn{margin:0; box-shadow:0 8px 22px rgba(0,0,0,.45);}
 
   .ad-center{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;}
   .spinner{width:46px; height:46px; border-radius:50%; border:4px solid var(--border); border-top-color:var(--accent); animation:spin 1s linear infinite; margin-bottom:18px;}
@@ -106,6 +176,22 @@
 
   .stats-line{color:var(--muted); font-size:12.5px; margin-top:18px;}
   .hidden{display:none !important;}
+
+  /* Невысокие окна (Telegram Desktop, маленькие телефоны): всё компактнее, чтобы вопрос, варианты
+     и объяснение помещались почти без прокрутки */
+  @media (max-height: 760px){
+    .screen{padding-top:12px;}
+    .topbar{margin-bottom:12px;}
+    .progress-row{margin-bottom:12px;}
+    .sign-wrap{margin-bottom:10px;}
+    .sign-wrap svg{width:86px; height:86px;}
+    .question{font-size:16.5px; margin-bottom:14px;}
+    .options{gap:8px;}
+    .option{padding:11px 14px; font-size:14.5px;}
+    .explain-box{margin-top:12px; font-size:13.5px; padding:10px 12px;}
+    .next-wrap{padding-top:10px; padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));}
+    .next-wrap .btn{padding:13px;}
+  }
 </style>
 </head>
 <body>
@@ -128,6 +214,7 @@
       <div class="badge" data-t="badge_qcount">20 вопросов из 100</div>
     </div>
     <button class="btn btn-primary" id="btn-start" data-t="btn_start">▶️ Начать тест</button>
+    <div class="load-error hidden" id="load-error" data-t="load_error">Не удалось загрузить вопросы. Проверь интернет и нажми кнопку ещё раз.</div>
   </div>
 </div>
 
@@ -135,13 +222,13 @@
 <div class="screen hidden" id="screen-quiz">
   <div class="topbar">
     <div class="brand">Prava<span>Sinov</span></div>
+    <div class="progress-label" id="progress-label"></div>
   </div>
   <div class="progress-row" id="progress-row"></div>
-  <div class="progress-label" id="progress-label"></div>
   <div class="sign-wrap hidden" id="sign-wrap"></div>
   <div class="question" id="question-text"></div>
   <div class="options" id="options-wrap"></div>
-  <div class="explain-box" id="explain-box"></div>
+  <div class="explain-box" id="explain-box" aria-live="polite"></div>
   <div class="next-wrap" id="next-wrap">
     <button class="btn btn-primary" id="btn-next" data-t="btn_next">Далее →</button>
   </div>
@@ -171,28 +258,82 @@
 </div>
 
 <script>
-// ---- Telegram WebApp (мягкая деградация вне Telegram) ----
-const tg = window.Telegram?.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
+const APP_BUILD = "2026-10-02.1";
 
-// ---- Бот и адрес приложения (обновить после создания бота в BotFather) ----
-const BOT_USERNAME = "pravasinov_bot"; // используется в кнопке "Поделиться"
+// ---- Telegram WebApp (мягкая деградация вне Telegram) ----
+const tg = window.Telegram && window.Telegram.WebApp;
+const IN_TELEGRAM = !!(tg && tg.initData);
+if (tg) {
+  try { tg.ready(); } catch (e) {}
+  try { tg.expand(); } catch (e) {}
+  // Шапка и фон окна Telegram — в цвет приложения; на телефонах прокрутка не сворачивает окно
+  try { if (tg.isVersionAtLeast && tg.isVersionAtLeast("6.1")) tg.setBackgroundColor("#101820"); } catch (e) {}
+  try { if (tg.isVersionAtLeast && tg.isVersionAtLeast("6.9")) tg.setHeaderColor("#101820"); } catch (e) {}
+  try { if (tg.isVersionAtLeast && tg.isVersionAtLeast("7.7")) tg.disableVerticalSwipes(); } catch (e) {}
+}
+
+// ---- Анонимная диагностика: открытие, старт, реклама, ошибки (без Telegram ID и IP) ----
+// Нужна, чтобы видеть, на какой платформе и на каком шаге у людей (и у модераторов) что-то не так.
+const diag = (() => {
+  const sid = Math.random().toString(36).slice(2, 10);
+  const counts = {};
+  const LIMITS = { q: 4, ad: 3, leave: 3, err: 5 };
+  return (ev, extra) => {
+    counts[ev] = (counts[ev] || 0) + 1;
+    if (counts[ev] > (LIMITS[ev] || 2)) return;
+    try {
+      const body = JSON.stringify(Object.assign({
+        ev, s: sid, b: APP_BUILD,
+        p: (tg && tg.platform) || "browser", v: (tg && tg.version) || "",
+        ifr: window.self !== window.top ? 1 : 0,
+        vw: window.innerWidth, vh: window.innerHeight,
+        ms: Math.round(performance.now()),
+      }, extra || {}));
+      if (navigator.sendBeacon && navigator.sendBeacon("/api/event", body)) return;
+      fetch("/api/event", { method: "POST", body, keepalive: true }).catch(() => {});
+    } catch (e) {}
+  };
+})();
+window.addEventListener("error", (e) => diag("err", { m: String((e && e.message) || "error").slice(0, 150) }));
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e && e.reason;
+  diag("err", { m: ("promise: " + String((r && (r.message || r.description)) || r || "")).slice(0, 150) });
+});
+
+// ---- Бот (кнопка «Поделиться») ----
+const BOT_USERNAME = "pravasinov_bot";
 
 // ---- Реклама между вопросами (Adsgram Interstitial) ----
-// Block ID получишь на partner.adsgram.ai после создания Ad unit типа "Interstitial".
+// Block ID берётся на partner.adsgram.ai (Ad unit типа "Interstitial").
 const ADSGRAM_BLOCK_ID = "int-51187";
 let AdController = null;
-let adsDisabled = false; // блок не активен (на модерации) — до конца сессии рекламу не дёргаем
-try {
-  if (window.Adsgram && ADSGRAM_BLOCK_ID !== "REPLACE_WITH_YOUR_BLOCK_ID") {
+let adsDisabled = false; // блок не активен / сессия устарела — до конца сессии рекламу не вызываем
+let adStarted = false;
+
+function ensureAds() {
+  if (AdController || adsDisabled) return AdController;
+  // Реклама работает только внутри Telegram; в обычном браузере SDK вообще не вызываем
+  if (!IN_TELEGRAM || !window.Adsgram || !ADSGRAM_BLOCK_ID || ADSGRAM_BLOCK_ID === "REPLACE_WITH_YOUR_BLOCK_ID") return null;
+  try {
     AdController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
-    // Без подписки SDK показывает свои стандартные окна («нет рекламы», «слишком часто»).
-    // Нам они не нужны: если рекламы нет — тест просто идёт дальше.
-    ["onBannerNotFound", "onNonStopShow", "onTooLongSession", "onFastReturn", "onError"].forEach((ev) => {
+    // С подпиской SDK не показывает свои стандартные окна («нет рекламы», «слишком часто»):
+    // если рекламы нет — тест просто идёт дальше.
+    ["onBannerNotFound", "onNonStopShow", "onTooLongSession", "onError"].forEach((ev) => {
       try { AdController.addEventListener(ev, () => console.info("[ads]", ev)); } catch (e) {}
     });
+    try { AdController.addEventListener("onStart", () => { adStarted = true; }); } catch (e) {}
+  } catch (e) {
+    console.warn("[ads] init failed", e);
+    AdController = null;
   }
-} catch (e) { console.warn("Adsgram init failed", e); }
+  return AdController;
+}
+const sdkTag = document.getElementById("adsgram-sdk");
+if (window.Adsgram) ensureAds();
+else if (sdkTag) {
+  sdkTag.addEventListener("load", ensureAds);
+  sdkTag.addEventListener("error", () => diag("err", { m: "adsgram_sdk_load_failed" }));
+}
 
 function getPlayerId(){
   if (tg?.initDataUnsafe?.user?.id) return "tg_" + tg.initDataUnsafe.user.id;
@@ -212,7 +353,9 @@ const I18N = {
     start_title:"Готов к экзамену?",
     start_sub:"Бесплатные тесты ПДД с картинками — на русском и узбекском. Отвечай, сразу видишь правильный ответ и объяснение.",
     badge_free:"🆓 Бесплатно", badge_images:"🖼️ С картинками", badge_qcount:"20 вопросов из 100",
-    btn_start:"▶️ Начать тест", btn_next:"Далее →", ad_loading:"Секунду, дальше продолжим тест...",
+    btn_start:"▶️ Начать тест", btn_next:"Далее →", btn_finish:"Показать результат →",
+    loading:"Загрузка…", load_error:"Не удалось загрузить вопросы. Проверь интернет и нажми кнопку ещё раз.",
+    ad_loading:"Секунду, дальше продолжим тест...",
     result_label:"Твой результат", btn_restart:"🔁 Пройти ещё раз", btn_share:"📤 Поделиться",
     disclaimer:"Учебный тест для подготовки. Не официальный экзамен ГСБДД.",
     q_label:(i,n)=>`Вопрос ${i} из ${n}`,
@@ -226,7 +369,9 @@ const I18N = {
     start_title:"Imtihonga tayyormisiz?",
     start_sub:"Rasmli bepul YHQ testlari — rus va o'zbek tilida. Javob bering, darhol to'g'ri javobni va tushuntirishni ko'rasiz.",
     badge_free:"🆓 Bepul", badge_images:"🖼️ Rasmlar bilan", badge_qcount:"100 tadan 20 ta savol",
-    btn_start:"▶️ Testni boshlash", btn_next:"Keyingisi →", ad_loading:"Bir soniya, testni davom ettiramiz...",
+    btn_start:"▶️ Testni boshlash", btn_next:"Keyingisi →", btn_finish:"Natijani ko'rish →",
+    loading:"Yuklanmoqda…", load_error:"Savollarni yuklab bo'lmadi. Internetni tekshiring va tugmani qayta bosing.",
+    ad_loading:"Bir soniya, testni davom ettiramiz...",
     result_label:"Natijangiz", btn_restart:"🔁 Yana urinish", btn_share:"📤 Ulashish",
     disclaimer:"Tayyorlanish uchun o'quv testi. Rasmiy GSBDD imtihoni emas.",
     q_label:(i,n)=>`${i}-savol, jami ${n}`,
@@ -254,27 +399,43 @@ document.querySelectorAll(".lang-toggle button").forEach(btn=>{
 });
 applyI18N();
 
-// ---- Банк вопросов (грузится статически из questions_bank.json через fetch) ----
+// ---- Банк вопросов: questions_bank.json, загружаем сразу при открытии, пока человек читает старт ----
 let BANK = [];
 let sessionQuestions = [];
 let idx = 0;
 let correctCount = 0;
 let answeredSinceAd = 0;
 let currentOrder = [];
+let answered = false;
 
 function shuffle(arr){ for (let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
 
-async function loadBank(){
-  if (BANK.length) return BANK;
-  const res = await fetch("questions_bank.json");
-  const data = await res.json();
-  BANK = data.questions;
-  return BANK;
+let bankPromise = null;
+function loadBank(){
+  if (BANK.length) return Promise.resolve(BANK);
+  if (!bankPromise) {
+    bankPromise = fetch("questions_bank.json")
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then((data) => { BANK = data.questions; return BANK; })
+      .catch((e) => { bankPromise = null; throw e; }); // следующий клик попробует снова
+  }
+  return bankPromise;
 }
+loadBank().catch(() => {});
 
 function pickSession(){
   const pool = shuffle(BANK.slice());
   return pool.slice(0, Math.min(SESSION_SIZE, pool.length));
+}
+
+function showScreen(id){
+  ["screen-start","screen-quiz","screen-ad","screen-result"].forEach((s) => {
+    document.getElementById(s).classList.toggle("hidden", s !== id);
+  });
+}
+function currentScreen(){
+  const s = ["screen-start","screen-quiz","screen-ad","screen-result"].find((id) => !document.getElementById(id).classList.contains("hidden"));
+  return s ? s.slice(7) : "";
 }
 
 function renderProgress(){
@@ -290,7 +451,10 @@ function renderProgress(){
 
 function renderQuestion(){
   const q = sessionQuestions[idx];
+  answered = false;
+  window.scrollTo(0, 0);
   renderProgress();
+  if (idx === 1 || idx === 3 || idx === 10) diag("q", { i: idx });
 
   const signWrap = document.getElementById("sign-wrap");
   if (q.sign && window.SIGN_ICONS && window.SIGN_ICONS[q.sign]) {
@@ -324,12 +488,13 @@ function renderQuestion(){
 }
 
 function selectAnswer(choiceDisplayIdx){
+  if (answered) return;
+  answered = true;
   const q = sessionQuestions[idx];
   const correctDisplayIdx = currentOrder.indexOf(q.correct);
   const buttons = document.querySelectorAll("#options-wrap .option");
   buttons.forEach((b,i)=>{
     b.disabled = true;
-    b.style.cursor = "default";
     if (i === correctDisplayIdx) b.classList.add("correct");
     else if (i === choiceDisplayIdx) b.classList.add("wrong");
   });
@@ -343,10 +508,26 @@ function selectAnswer(choiceDisplayIdx){
   explainBox.innerHTML = `<b>${verdict}</b><br>${explanation}`;
   explainBox.className = "explain-box show " + (isCorrect ? "ok" : "no");
 
+  const nextBtn = document.getElementById("btn-next");
+  nextBtn.textContent = idx === sessionQuestions.length - 1 ? I18N[lang].btn_finish : I18N[lang].btn_next;
   document.getElementById("next-wrap").classList.add("show");
+  // Кнопка «Далее» закреплена внизу окна; объяснение докручиваем так, чтобы оно целиком было над ней
+  // (а если не помещается — чтобы было видно его начало)
+  requestAnimationFrame(() => {
+    const ex = explainBox.getBoundingClientRect();
+    const barTop = document.getElementById("next-wrap").getBoundingClientRect().top;
+    const delta = Math.min(ex.bottom - (barTop - 8), ex.top - 8);
+    if (delta > 1) {
+      try { window.scrollBy({ top: delta, behavior: "smooth" }); } catch (e) { window.scrollBy(0, delta); }
+    }
+    try { nextBtn.focus({ preventScroll: true }); } catch (e) {}
+  });
 }
 
-document.getElementById("btn-next").addEventListener("click", ()=>{
+function goNext(){
+  if (!answered) return;
+  answered = false;
+  document.getElementById("next-wrap").classList.remove("show");
   idx++;
   answeredSinceAd++;
   if (idx >= sessionQuestions.length) { finishSession(); return; }
@@ -356,38 +537,63 @@ document.getElementById("btn-next").addEventListener("click", ()=>{
   } else {
     renderQuestion();
   }
+}
+document.getElementById("btn-next").addEventListener("click", goNext);
+
+// Клавиатура (Telegram Desktop): 1–4 — выбрать ответ, Enter — дальше
+document.addEventListener("keydown", (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (currentScreen() !== "quiz") return;
+  if (!answered && /^[1-4]$/.test(e.key)) {
+    const b = document.querySelectorAll("#options-wrap .option")[Number(e.key) - 1];
+    if (b) { e.preventDefault(); b.click(); }
+  } else if (answered && e.key === "Enter" && document.activeElement !== document.getElementById("btn-next")) {
+    e.preventDefault();
+    goNext();
+  }
 });
 
 function showAdThenNext(){
-  document.getElementById("screen-quiz").classList.add("hidden");
-  document.getElementById("screen-ad").classList.remove("hidden");
-  const proceed = ()=>{
-    document.getElementById("screen-ad").classList.add("hidden");
-    document.getElementById("screen-quiz").classList.remove("hidden");
+  const ctrl = adsDisabled ? null : ensureAds();
+  if (!ctrl) { renderQuestion(); return; } // рекламы нет — сразу следующий вопрос, без паузы
+  showScreen("screen-ad");
+  window.scrollTo(0, 0);
+
+  let done = false;
+  let guard = null;
+  adStarted = false;
+  window.__adCallActive = true;
+  const finish = (result, detail) => {
+    if (done) return;
+    done = true;
+    clearTimeout(guard);
+    setTimeout(() => { window.__adCallActive = false; }, 3000);
+    diag("ad", { r: result, d: String(detail || "").slice(0, 120), i: idx });
+    showScreen("screen-quiz");
     renderQuestion();
   };
-  if (!AdController || adsDisabled) { setTimeout(proceed, 600); return; }
-  let done = false;
-  const finish = () => { if (!done) { done = true; proceed(); } };
-  // страховка: если SDK завис и не ответил — через 20 с продолжаем тест
-  const guard = setTimeout(finish, 20000);
+  // Страховка: если за 10 с реклама так и не началась — продолжаем тест; если началась — ждём её закрытия
+  guard = setTimeout(() => {
+    if (adStarted) { guard = setTimeout(() => finish("timeout_after_start"), 120000); return; }
+    finish("timeout");
+  }, 10000);
+
   let shown;
-  try { shown = Promise.resolve(AdController.show()); }
+  try { shown = Promise.resolve(ctrl.show()); }
   catch (e) { shown = Promise.reject(e); }
   shown
-    .then(() => { clearTimeout(guard); finish(); })
+    .then((res) => finish("shown", res && res.description))
     .catch((res) => {
-      clearTimeout(guard);
       const why = String((res && (res.description || res.message)) || res || "");
-      if (/not active|active blockid|not found|Need to use/i.test(why)) adsDisabled = true;
+      if (/not active|active blockid|not found|need to use|wrong referer|no botid|too old/i.test(why)) adsDisabled = true;
       console.info("[ads] реклама не показана:", why);
-      finish();
+      finish("error", why);
     });
 }
 
 async function finishSession(){
-  document.getElementById("screen-quiz").classList.add("hidden");
-  document.getElementById("screen-result").classList.remove("hidden");
+  showScreen("screen-result");
+  window.scrollTo(0, 0);
   const total = sessionQuestions.length;
   document.getElementById("final-score").textContent = `${correctCount}/${total}`;
   const pct = correctCount / total;
@@ -395,6 +601,7 @@ async function finishSession(){
   if (pct >= 0.85) { msgEl.textContent = I18N[lang].msg_good; msgEl.className = "result-msg good"; }
   else if (pct >= 0.6) { msgEl.textContent = I18N[lang].msg_mid; msgEl.className = "result-msg mid"; }
   else { msgEl.textContent = I18N[lang].msg_low; msgEl.className = "result-msg low"; }
+  diag("finish", { sc: correctCount, n: total });
 
   try {
     await fetch("/api/attempt", {
@@ -414,17 +621,45 @@ document.getElementById("btn-share").addEventListener("click", ()=>{
   else window.open(shareUrl, "_blank");
 });
 
+let starting = false;
 async function startSession(){
-  await loadBank();
+  if (starting) return;
+  starting = true;
+  const btn = document.getElementById("btn-start");
+  const errBox = document.getElementById("load-error");
+  errBox.classList.add("hidden");
+  const t = performance.now();
+  if (!BANK.length) { btn.disabled = true; btn.textContent = I18N[lang].loading; }
+  try {
+    await loadBank();
+  } catch (e) {
+    diag("start", { ok: 0, m: String((e && e.message) || e).slice(0, 100) });
+    errBox.classList.remove("hidden");
+    return;
+  } finally {
+    starting = false;
+    btn.disabled = false;
+    btn.textContent = I18N[lang].btn_start;
+  }
   sessionQuestions = pickSession();
   idx = 0; correctCount = 0; answeredSinceAd = 0;
-  document.getElementById("screen-start").classList.add("hidden");
-  document.getElementById("screen-result").classList.add("hidden");
-  document.getElementById("screen-quiz").classList.remove("hidden");
+  showScreen("screen-quiz");
+  diag("start", { ok: 1, wait: Math.round(performance.now() - t) });
   renderQuestion();
 }
 
 document.getElementById("btn-start").addEventListener("click", startSession);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") diag("leave", { i: idx, scr: currentScreen() });
+});
+
+const ida = (tg && tg.initDataUnsafe) || {};
+diag("open", {
+  tg: IN_TELEGRAM ? 1 : 0, sdk: window.Adsgram ? 1 : 0,
+  tvh: tg && tg.viewportStableHeight ? Math.round(tg.viewportStableHeight) : 0,
+  sp: ida.start_param || "", ct: ida.chat_type || "",
+});
 </script>
+<script src="signs.js" defer></script>
 </body>
 </html>

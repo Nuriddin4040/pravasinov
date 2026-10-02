@@ -7,7 +7,10 @@ const memory = {
   users: new Set(),
   totalAttempts: 0,
   dailyAttempts: new Map(), // "YYYY-MM-DD" -> count
+  events: [], // последние анонимные события мини-приложения (новые — в начале)
 };
+const EVENTS_KEY = 'ps:events';
+const EVENTS_MAX = 500;
 let warnedFallback = false;
 
 function getRedis() {
@@ -61,4 +64,31 @@ async function getStats() {
   };
 }
 
-module.exports = { recordAttempt, getStats };
+// Анонимное событие мини-приложения (открытие, старт, реклама, ошибки) — для диагностики.
+// Храним только последние EVENTS_MAX штук.
+async function pushEvent(evt) {
+  const redis = getRedis();
+  if (!redis) {
+    memory.events.unshift(evt);
+    if (memory.events.length > EVENTS_MAX) memory.events.length = EVENTS_MAX;
+    return;
+  }
+  const p = redis.pipeline();
+  p.lpush(EVENTS_KEY, JSON.stringify(evt));
+  p.ltrim(EVENTS_KEY, 0, EVENTS_MAX - 1);
+  await p.exec();
+}
+
+async function getEvents(limit = 200) {
+  const n = Math.max(1, Math.min(EVENTS_MAX, Math.floor(Number(limit) || 200)));
+  const redis = getRedis();
+  if (!redis) return memory.events.slice(0, n);
+  const rows = await redis.lrange(EVENTS_KEY, 0, n - 1);
+  // клиент Upstash сам превращает JSON-строки обратно в объекты, но на всякий случай разбираем и строки
+  return (rows || []).map((r) => {
+    if (typeof r !== 'string') return r;
+    try { return JSON.parse(r); } catch (e) { return { raw: r }; }
+  });
+}
+
+module.exports = { recordAttempt, getStats, pushEvent, getEvents };
