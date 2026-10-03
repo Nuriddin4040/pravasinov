@@ -94,6 +94,11 @@ async function assertVisible(target, selector, what, bottomLimit) {
 async function answerAndNext(target, n, { useKeyboard = false, bottomLimit } = {}) {
   await target.waitForSelector("#screen-quiz:not(.hidden) #options-wrap .option:not([disabled])", { timeout: 5000 });
   const qid = await target.evaluate(() => sessionQuestions[idx].id);
+  const pic = await target.evaluate(() => {
+    const w = document.getElementById("sign-wrap");
+    return !w.classList.contains("hidden") && !!w.querySelector("svg") && w.querySelector("svg").getBoundingClientRect().height > 40;
+  });
+  check(pic, `Вопрос ${qid}: нет картинки`);
   const opts = await target.$$("#options-wrap .option");
   check(opts.length === 4, `Вопрос ${qid}: ${opts.length} вариантов вместо 4`);
   const pick = Math.floor(Math.random() * 4);
@@ -243,6 +248,31 @@ async function scenarioBrowser(browser) {
   await ctx.close();
 }
 
+// E) Узбекский язык, все 100 вопросов банка подряд в невысоком окне: у каждого есть картинка,
+//    объяснение и кнопка «Далее» видны без прокрутки
+async function scenarioUzbekAll(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 560 } });
+  const page = await ctx.newPage();
+  const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => { window.TelegramWebviewProxy = { postEvent() {} }; });
+  await routeFakes(page, IN_TG, "ios");
+  await page.goto(`http://localhost:${PORT}/`);
+  await page.click('.lang-toggle button[data-lang="uz"]');
+  await page.click("#btn-start");
+  await page.waitForSelector("#screen-quiz:not(.hidden)");
+  await page.evaluate(() => { sessionQuestions = BANK.slice(); idx = 0; correctCount = 0; renderQuestion(); });
+  const seen = new Set();
+  for (let i = 0; i < 100; i++) seen.add(await answerAndNext(page, i + 1));
+  await page.waitForSelector("#screen-result:not(.hidden)", { timeout: 5000 });
+  const score = (await page.textContent("#final-score")).trim();
+  const uzText = await page.textContent("#btn-restart");
+  console.log(`E) Узбекский, весь банк: вопросов ${seen.size}, результат ${score}, все с картинкой`);
+  check(seen.size === 100 && /^\d+\/100$/.test(score), "Не все 100 вопросов пройдены");
+  check(/urinish/i.test(uzText), "Интерфейс не на узбекском: " + uzText);
+  check(errors.length === 0, "Ошибки JS на странице: " + errors.join("; "));
+  await ctx.close();
+}
+
 async function run() {
   await new Promise((r) => server.listen(PORT, r));
   const browser = await chromium.launch();
@@ -251,6 +281,7 @@ async function run() {
     await scenarioAndroid(browser);
     await scenarioWeb(browser);
     await scenarioBrowser(browser);
+    await scenarioUzbekAll(browser);
   } finally {
     await browser.close();
     server.close();

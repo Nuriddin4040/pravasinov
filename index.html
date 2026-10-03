@@ -141,6 +141,7 @@
 
   .sign-wrap{display:flex; justify-content:center; margin-bottom:18px;}
   .sign-wrap svg{width:118px; height:118px; filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));}
+  .sign-wrap.is-scene svg{width:min(100%, 264px); height:auto; aspect-ratio:240/140; filter:drop-shadow(0 4px 12px rgba(0,0,0,.3));}
 
   .question{font-size:18px; font-weight:700; margin-bottom:20px; line-height:1.35; text-align:center;}
   .options{display:flex; flex-direction:column; gap:10px;}
@@ -185,6 +186,7 @@
     .progress-row{margin-bottom:12px;}
     .sign-wrap{margin-bottom:10px;}
     .sign-wrap svg{width:86px; height:86px;}
+    .sign-wrap.is-scene svg{width:min(100%, 204px); height:auto;}
     .question{font-size:16.5px; margin-bottom:14px;}
     .options{gap:8px;}
     .option{padding:11px 14px; font-size:14.5px;}
@@ -258,7 +260,7 @@
 </div>
 
 <script>
-const APP_BUILD = "2026-10-02.2";
+const APP_BUILD = "2026-10-03.1";
 
 // ---- Telegram WebApp (мягкая деградация вне Telegram) ----
 const tg = window.Telegram && window.Telegram.WebApp;
@@ -456,9 +458,12 @@ function renderQuestion(){
   renderProgress();
   if (idx === 1 || idx === 3 || idx === 10) diag("q", { i: idx });
 
+  // Картинка: знак (sign) или иллюстрация к ситуации (img — схема из scenes.js или знак)
   const signWrap = document.getElementById("sign-wrap");
-  if (q.sign && window.SIGN_ICONS && window.SIGN_ICONS[q.sign]) {
-    signWrap.innerHTML = window.SIGN_ICONS[q.sign];
+  const picKey = q.sign || q.img;
+  if (picKey && window.SIGN_ICONS && window.SIGN_ICONS[picKey]) {
+    signWrap.innerHTML = window.SIGN_ICONS[picKey];
+    signWrap.classList.toggle("is-scene", picKey.startsWith("scene_"));
     signWrap.classList.remove("hidden");
   } else {
     signWrap.innerHTML = "";
@@ -661,5 +666,6 @@ diag("open", {
 });
 </script>
 <script src="signs.js" defer></script>
+<script src="scenes.js" defer></script>
 </body>
 </html>
